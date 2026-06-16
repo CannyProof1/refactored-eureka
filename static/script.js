@@ -4,13 +4,14 @@ const API_BASE = '/api';
 async function loadPatients() {
     try {
         const response = await fetch(`${API_BASE}/patients`);
+        if (!response.ok) throw new Error('Network response was not ok');
         const patients = await response.json();
         renderPatients(patients);
         updateStats(patients);
     } catch (error) {
         console.error('Ошибка загрузки:', error);
         document.getElementById('patientsList').innerHTML = 
-            '<p class="empty-message">❌ Ошибка загрузки данных</p>';
+            '<p class="empty-message">❌ Ошибка загрузки данных. Проверьте подключение к серверу.</p>';
     }
 }
 
@@ -18,7 +19,7 @@ async function loadPatients() {
 function renderPatients(patients) {
     const container = document.getElementById('patientsList');
     
-    if (patients.length === 0) {
+    if (!patients || patients.length === 0) {
         container.innerHTML = '<p class="empty-message">👨‍⚕️ Нет зарегистрированных пациентов</p>';
         return;
     }
@@ -26,11 +27,11 @@ function renderPatients(patients) {
     container.innerHTML = patients.map(patient => `
         <div class="patient-card" data-id="${patient.id}">
             <div class="patient-info">
-                <div class="patient-name">${patient.name}</div>
+                <div class="patient-name">${escapeHtml(patient.name)}</div>
                 <div class="patient-details">
                     <span>🎂 ${patient.age} лет</span>
-                    <span>🏷️ ${patient.diagnosis || 'Без диагноза'}</span>
-                    <span>📱 ${patient.phone || 'Не указан'}</span>
+                    <span>🏷️ ${escapeHtml(patient.diagnosis || 'Без диагноза')}</span>
+                    <span>📱 ${escapeHtml(patient.phone || 'Не указан')}</span>
                     <span class="status-badge status-${patient.status}">${getStatusText(patient.status)}</span>
                 </div>
             </div>
@@ -40,6 +41,13 @@ function renderPatients(patients) {
             </div>
         </div>
     `).join('');
+}
+
+// Экранирование HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // Статусы
@@ -54,6 +62,7 @@ function getStatusText(status) {
 
 // Обновление статистики
 function updateStats(patients) {
+    if (!patients) return;
     document.getElementById('totalPatients').textContent = patients.length;
     document.getElementById('activePatients').textContent = 
         patients.filter(p => p.status === 'active').length;
@@ -66,12 +75,17 @@ document.getElementById('patientForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const formData = {
-        name: document.getElementById('name').value,
+        name: document.getElementById('name').value.trim(),
         age: parseInt(document.getElementById('age').value),
-        diagnosis: document.getElementById('diagnosis').value,
-        phone: document.getElementById('phone').value,
+        diagnosis: document.getElementById('diagnosis').value.trim(),
+        phone: document.getElementById('phone').value.trim(),
         status: document.getElementById('status').value
     };
+    
+    if (!formData.name || !formData.age) {
+        showNotification('❌ Заполните имя и возраст', 'error');
+        return;
+    }
     
     try {
         const response = await fetch(`${API_BASE}/patient`, {
@@ -83,13 +97,14 @@ document.getElementById('patientForm').addEventListener('submit', async (e) => {
         if (response.ok) {
             document.getElementById('patientForm').reset();
             loadPatients();
-            showNotification('✅ Пациент успешно добавлен!');
+            showNotification('✅ Пациент успешно добавлен!', 'success');
         } else {
-            showNotification('❌ Ошибка при добавлении пациента');
+            const error = await response.json();
+            showNotification(`❌ ${error.error || 'Ошибка при добавлении'}`, 'error');
         }
     } catch (error) {
         console.error('Ошибка:', error);
-        showNotification('❌ Ошибка сервера');
+        showNotification('❌ Ошибка сервера', 'error');
     }
 });
 
@@ -104,72 +119,99 @@ async function deletePatient(id) {
         
         if (response.ok) {
             loadPatients();
-            showNotification('🗑️ Пациент удален');
+            showNotification('🗑️ Пациент удален', 'success');
         }
     } catch (error) {
         console.error('Ошибка:', error);
-        showNotification('❌ Ошибка при удалении');
+        showNotification('❌ Ошибка при удалении', 'error');
     }
 }
 
-// Редактирование пациента (упрощенная версия)
+// Редактирование пациента
 async function editPatient(id) {
     try {
         const response = await fetch(`${API_BASE}/patient/${id}`);
+        if (!response.ok) throw new Error('Patient not found');
         const patient = await response.json();
         
-        // Заполняем форму данными пациента
         document.getElementById('name').value = patient.name;
         document.getElementById('age').value = patient.age;
         document.getElementById('diagnosis').value = patient.diagnosis || '';
         document.getElementById('phone').value = patient.phone || '';
         document.getElementById('status').value = patient.status;
         
-        // Меняем текст кнопки
         const btn = document.querySelector('.btn-primary');
         btn.textContent = '💾 Обновить данные';
+        btn.dataset.editId = id;
         
-        // Отменяем предыдущую обработку
-        const form = document.getElementById('patientForm');
-        const oldSubmit = form.onsubmit;
-        form.onsubmit = async (e) => {
-            e.preventDefault();
-            
-            const formData = {
-                name: document.getElementById('name').value,
-                age: parseInt(document.getElementById('age').value),
-                diagnosis: document.getElementById('diagnosis').value,
-                phone: document.getElementById('phone').value,
-                status: document.getElementById('status').value
-            };
-            
-            try {
-                const updateResponse = await fetch(`${API_BASE}/patient/${id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData)
-                });
-                
-                if (updateResponse.ok) {
-                    form.reset();
-                    btn.textContent = '➕ Добавить пациента';
-                    form.onsubmit = oldSubmit;
-                    loadPatients();
-                    showNotification('✅ Данные обновлены!');
-                }
-            } catch (error) {
-                console.error('Ошибка:', error);
-                showNotification('❌ Ошибка при обновлении');
-            }
-        };
-        
-        // Прокручиваем к форме
         document.querySelector('.form-section').scrollIntoView({ behavior: 'smooth' });
     } catch (error) {
         console.error('Ошибка:', error);
-        showNotification('❌ Ошибка при загрузке данных пациента');
+        showNotification('❌ Ошибка при загрузке данных пациента', 'error');
     }
 }
+
+// Обработка обновления (добавляем в существующий слушатель)
+document.getElementById('patientForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const btn = document.querySelector('.btn-primary');
+    const editId = btn.dataset.editId;
+    
+    const formData = {
+        name: document.getElementById('name').value.trim(),
+        age: parseInt(document.getElementById('age').value),
+        diagnosis: document.getElementById('diagnosis').value.trim(),
+        phone: document.getElementById('phone').value.trim(),
+        status: document.getElementById('status').value
+    };
+    
+    if (!formData.name || !formData.age) {
+        showNotification('❌ Заполните имя и возраст', 'error');
+        return;
+    }
+    
+    try {
+        let response;
+        if (editId) {
+            // Обновление
+            response = await fetch(`${API_BASE}/patient/${editId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+            
+            if (response.ok) {
+                document.getElementById('patientForm').reset();
+                btn.textContent = '➕ Добавить пациента';
+                delete btn.dataset.editId;
+                loadPatients();
+                showNotification('✅ Данные обновлены!', 'success');
+            }
+        } else {
+            // Добавление
+            response = await fetch(`${API_BASE}/patient`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+            
+            if (response.ok) {
+                document.getElementById('patientForm').reset();
+                loadPatients();
+                showNotification('✅ Пациент успешно добавлен!', 'success');
+            }
+        }
+        
+        if (!response.ok) {
+            const error = await response.json();
+            showNotification(`❌ ${error.error || 'Ошибка'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        showNotification('❌ Ошибка сервера', 'error');
+    }
+});
 
 // Поиск
 document.getElementById('searchInput').addEventListener('input', (e) => {
@@ -183,7 +225,13 @@ document.getElementById('searchInput').addEventListener('input', (e) => {
 });
 
 // Уведомления
-function showNotification(message) {
+function showNotification(message, type = 'info') {
+    const colors = {
+        success: '#48bb78',
+        error: '#fc8181',
+        info: '#667eea'
+    };
+    
     const notification = document.createElement('div');
     notification.style.cssText = `
         position: fixed;
@@ -197,7 +245,8 @@ function showNotification(message) {
         color: #2d3748;
         z-index: 1000;
         animation: slideIn 0.5s ease;
-        border-left: 5px solid #667eea;
+        border-left: 5px solid ${colors[type] || colors.info};
+        max-width: 400px;
     `;
     notification.textContent = message;
     document.body.appendChild(notification);
@@ -223,4 +272,4 @@ style.textContent = `
 document.head.appendChild(style);
 
 // Инициализация
-loadPatients();
+document.addEventListener('DOMContentLoaded', loadPatients);
