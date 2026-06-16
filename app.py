@@ -1,9 +1,24 @@
+import sys
+import os
+import importlib.util
+
+# Фикс для Python 3.14
+if sys.version_info >= (3, 14):
+    # Создаем заглушку для pkgutil.get_loader
+    import pkgutil
+    if not hasattr(pkgutil, 'get_loader'):
+        def get_loader(module_name):
+            spec = importlib.util.find_spec(module_name)
+            if spec is None:
+                return None
+            return spec.loader
+        pkgutil.get_loader = get_loader
+
 from flask import Flask, render_template, request, jsonify
 from database import init_db, add_patient, get_all_patients, get_patient, update_patient, delete_patient
 import json
-import os
 
-# Создаем приложение с явным указанием путей
+# Создаем приложение
 app = Flask(__name__, 
             template_folder='templates',
             static_folder='static')
