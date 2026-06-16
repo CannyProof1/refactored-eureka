@@ -1,7 +1,6 @@
 import sqlite3
 import os
 
-# Определяем путь к базе данных в корне проекта
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'medical.db')
 
@@ -14,19 +13,22 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS patients (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            age INTEGER NOT NULL,
-            diagnosis TEXT,
-            phone TEXT,
-            status TEXT DEFAULT 'active',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+    # Проверяем, существует ли таблица
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='patients'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE patients (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                age INTEGER NOT NULL,
+                diagnosis TEXT,
+                phone TEXT,
+                status TEXT DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
     
-    conn.commit()
     conn.close()
 
 def add_patient(name, age, diagnosis, phone, status='active'):
